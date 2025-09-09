@@ -1,9 +1,9 @@
-const OpenAI = require('openai');
+const Groq = require('groq-sdk');
 const logger = require('../utils/logger');
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+// Initialize Groq client
+const groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY,
 });
 
 // System prompt for Lunchbox AI
@@ -54,8 +54,8 @@ async function handleAIChat(message, user) {
         // Add user context
         contextPrompt += `\n\nUser info: Level ${user.level}, ${user.xp} XP, ${user.streak_count} day streak.`;
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
+        const completion = await groq.chat.completions.create({
+            model: "llama3-8b-8192",
             messages: [
                 { role: "system", content: contextPrompt },
                 { role: "user", content: message }

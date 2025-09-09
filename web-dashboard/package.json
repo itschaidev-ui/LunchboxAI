@@ -29,7 +29,8 @@
     "prisma": "^5.7.1",
     "@prisma/client": "^5.7.1",
     "next-auth": "^4.24.5",
-    "discord.js": "^14.14.1"
+    "discord.js": "^14.14.1",
+    "groq-sdk": "^0.7.0"
   },
   "devDependencies": {
     "eslint": "^8",

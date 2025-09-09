@@ -9,7 +9,7 @@ Before you begin, make sure you have:
 - **Node.js** (v18 or higher)
 - **npm** or **yarn**
 - **Discord Bot Token** (from Discord Developer Portal)
-- **OpenAI API Key** (for AI features)
+- **Groq API Key** (for AI features)
 - **Git** (for version control)
 
 ## 🚀 Quick Start
@@ -40,7 +40,7 @@ cd LunchboxAiAllPlatforms
    DISCORD_TOKEN=your_bot_token_here
    DISCORD_CLIENT_ID=your_client_id_here
    DISCORD_GUILD_ID=your_test_server_id_here
-   OPENAI_API_KEY=your_openai_api_key_here
+   GROQ_API_KEY=your_groq_api_key_here
    ```
 
 3. **Install Dependencies and Start**
@@ -213,7 +213,7 @@ DATABASE_URL=postgresql://username:password@localhost:5432/lunchbox_ai
    - Verify SQLite installation
 
 3. **AI chat not working**
-   - Verify OpenAI API key
+   - Verify Groq API key
    - Check API quota and billing
    - Test API key with curl
 

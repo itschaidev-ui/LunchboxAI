@@ -1,0 +1,29 @@
+{
+  "name": "lunchbox-ai-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for Lunchbox AI - friendly task management and study assistant",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest"
+  },
+  "keywords": ["discord", "bot", "ai", "productivity", "task-management", "study"],
+  "author": "Lunchbox AI Team",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "openai": "^4.20.1",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.3",
+    "sqlite3": "^5.1.6",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

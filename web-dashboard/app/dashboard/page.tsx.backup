@@ -1,0 +1,993 @@
+'use client'
+
+import { useSession, signOut } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import AIChat from '../../components/AIChat'
+import PremiumFeatures from '../../components/PremiumFeatures'
+
+export default function Dashboard() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  const [activeTab, setActiveTab] = useState('chat')
+  const [tasks, setTasks] = useState([])
+  const [completingTask, setCompletingTask] = useState(null)
+  const [expandedTasks, setExpandedTasks] = useState(new Set())
+  const [activeWalkthrough, setActiveWalkthrough] = useState(null)
+  const [currentStep, setCurrentStep] = useState(0)
+  const [userStats, setUserStats] = useState({
+    xp: session?.user?.xp || 0,
+    level: session?.user?.level || 1,
+    streak: session?.user?.streak || 0
+  })
+  const [discordSettings, setDiscordSettings] = useState({
+    notifications_enabled: false,
+    has_connection: false
+  })
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin')
+    } else if (status === 'authenticated') {
+      // Fetch user stats, tasks, and Discord settings when component mounts
+      fetchUserStats()
+      fetchUserTasks()
+      fetchDiscordSettings()
+    }
+  }, [status, router])
+
+  const fetchUserStats = async () => {
+    try {
+      const response = await fetch('/api/user/stats')
+      if (response.ok) {
+        const stats = await response.json()
+        setUserStats(stats)
+      }
+    } catch (error) {
+      console.error('Error fetching user stats:', error)
+    }
+  }
+
+  const fetchUserTasks = async () => {
+    try {
+      const response = await fetch('/api/tasks')
+      if (response.ok) {
+        const tasks = await response.json()
+        setTasks(tasks)
+      }
+    } catch (error) {
+      console.error('Error fetching user tasks:', error)
+    }
+  }
+
+  const fetchDiscordSettings = async () => {
+    try {
+      const response = await fetch('/api/discord/notifications')
+      if (response.ok) {
+        const settings = await response.json()
+        setDiscordSettings({
+          notifications_enabled: settings.discord_notifications_enabled,
+          has_connection: settings.has_discord_connection
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching Discord settings:', error)
+    }
+  }
+
+  const toggleDiscordNotifications = async () => {
+    try {
+      const action = discordSettings.notifications_enabled ? 'disable_notifications' : 'enable_notifications'
+      const response = await fetch('/api/discord/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setDiscordSettings(prev => ({
+          ...prev,
+          notifications_enabled: !prev.notifications_enabled
+        }))
+        alert(data.message)
+      } else {
+        alert('Failed to update Discord notifications')
+      }
+    } catch (error) {
+      console.error('Error toggling Discord notifications:', error)
+      alert('Failed to update Discord notifications')
+    }
+  }
+
+  const testDiscordNotification = async () => {
+    try {
+      const response = await fetch('/api/discord/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'test_notification' }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        alert(data.message)
+      } else {
+        alert('Failed to send test notification')
+      }
+    } catch (error) {
+      console.error('Error sending test notification:', error)
+      alert('Failed to send test notification')
+    }
+  }
+
+  const toggleTaskExpansion = (taskId) => {
+    setExpandedTasks(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId)
+      } else {
+        newSet.add(taskId)
+      }
+      return newSet
+    })
+  }
+
+  const handleDeleteTask = async (taskId) => {
+    if (!window.confirm('Are you sure you want to delete this task?')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        // Refresh tasks to show updated list
+        await fetchUserTasks()
+        alert('Task deleted successfully!')
+      } else {
+        alert('Failed to delete task')
+      }
+    } catch (error) {
+      console.error('Error deleting task:', error)
+      alert('Failed to delete task')
+    }
+  }
+
+  const startWalkthrough = (task) => {
+    setActiveWalkthrough(task)
+    setCurrentStep(0)
+    setActiveTab('walkthrough')
+  }
+
+  const nextStep = () => {
+    if (activeWalkthrough && currentStep < activeWalkthrough.completion_steps.length - 1) {
+      setCurrentStep(currentStep + 1)
+    }
+  }
+
+  const prevStep = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1)
+    }
+  }
+
+  const completeWalkthrough = async () => {
+    if (!activeWalkthrough) return
+
+    try {
+      setCompletingTask(activeWalkthrough.id)
+      
+      const response = await fetch(`/api/tasks/${activeWalkthrough.id}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ forceComplete: true }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Refresh user stats and tasks
+        await Promise.all([
+          fetchUserStats(),
+          fetchUserTasks()
+        ])
+        
+        // Close walkthrough
+        setActiveWalkthrough(null)
+        setCurrentStep(0)
+        setActiveTab('tasks')
+        
+        alert(`🎉 Task completed! +${data.xpGained} XP`)
+      } else {
+        alert('Failed to complete task: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error completing task:', error)
+      alert('Failed to complete task')
+    } finally {
+      setCompletingTask(null)
+    }
+  }
+
+  const getFocusTips = (stepDescription) => {
+    const tips = []
+    
+    if (stepDescription.toLowerCase().includes('study') || stepDescription.toLowerCase().includes('review')) {
+      tips.push('📚 Use Pomodoro technique: 25min focus, 5min break')
+      tips.push('🌐 Install Chrome extension "StayFocusd" to block distracting sites')
+      tips.push('📝 Take notes in a separate document')
+    }
+    
+    if (stepDescription.toLowerCase().includes('watch') || stepDescription.toLowerCase().includes('video')) {
+      tips.push('🎥 Use 1.5x speed for faster learning')
+      tips.push('📱 Close other tabs to avoid distractions')
+      tips.push('⏸️ Pause and take notes every 10 minutes')
+    }
+    
+    if (stepDescription.toLowerCase().includes('practice') || stepDescription.toLowerCase().includes('quiz')) {
+      tips.push('⏰ Set a timer for each practice session')
+      tips.push('📊 Track your progress and weak areas')
+      tips.push('🔄 Review incorrect answers immediately')
+    }
+    
+    return tips
+  }
+
+  const exportToCalendar = async () => {
+    try {
+      const response = await fetch('/api/calendar')
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = 'lunchbox-tasks.ics'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+        alert('📅 Calendar exported successfully! Import the .ics file into Google Calendar, Apple Calendar, or Outlook.')
+      } else {
+        alert('Failed to export calendar')
+      }
+    } catch (error) {
+      console.error('Error exporting calendar:', error)
+      alert('Failed to export calendar')
+    }
+  }
+
+  const addTaskToCalendar = async (taskId) => {
+    try {
+      const response = await fetch('/api/calendar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          taskId,
+          action: 'add_to_calendar'
+        }),
+      })
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `task-${taskId}.ics`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+        alert('📅 Task added to calendar! Import the .ics file into your calendar app.')
+      } else {
+        alert('Failed to add task to calendar')
+      }
+    } catch (error) {
+      console.error('Error adding task to calendar:', error)
+      alert('Failed to add task to calendar')
+    }
+  }
+
+  const handleCompleteTask = async (taskId, forceComplete = false) => {
+    try {
+      setCompletingTask(taskId)
+      
+      const response = await fetch(`/api/tasks/${taskId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ forceComplete }),
+      })
+
+      const data = await response.json()
+
+      if (data.warning && data.isEarly) {
+        // Show confirmation dialog for early completion
+        const confirmed = window.confirm(data.message)
+        if (confirmed) {
+          return handleCompleteTask(taskId, true)
+        } else {
+          setCompletingTask(null)
+          return
+        }
+      }
+
+      if (data.success) {
+        // Refresh user stats and tasks to show updated data
+        await Promise.all([
+          fetchUserStats(),
+          fetchUserTasks()
+        ])
+        
+        // Show success message
+        alert(`Task completed! +${data.xpGained} XP`)
+        
+        if (data.isOverdue) {
+          alert('This task was overdue! A reminder has been sent to your Discord.')
+        }
+      } else {
+        alert('Failed to complete task: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error completing task:', error)
+      alert('Failed to complete task')
+    } finally {
+      setCompletingTask(null)
+    }
+  }
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-lunchbox-primary to-lunchbox-secondary flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white text-lg">Loading your dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return null
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <div className="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col">
+        {/* Logo */}
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">L</span>
+            </div>
+            <span className="font-semibold text-gray-900">Lunchbox AI</span>
+          </div>
+        </div>
+
+        {/* User Info */}
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            {session?.user?.image ? (
+              <img
+                src={session.user.image}
+                alt={session.user.name || 'User'}
+                className="w-10 h-10 rounded-full"
+              />
+            ) : (
+              <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
+                <span className="text-gray-600 font-medium">
+                  {session?.user?.name?.charAt(0) || 'U'}
+                </span>
+              </div>
+            )}
+            <div>
+              <p className="font-medium text-gray-900 text-sm">{session?.user?.name}</p>
+              <p className="text-xs text-gray-500">Level {userStats.level}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-2">
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'chat'
+                ? 'bg-purple-100 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <span className="text-lg">💬</span>
+            <span>AI Chat</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'tasks'
+                ? 'bg-purple-100 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <span className="text-lg">📝</span>
+            <span>Tasks</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('calendar')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'calendar'
+                ? 'bg-purple-100 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <span className="text-lg">📅</span>
+            <span>Calendar</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('walkthrough')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'walkthrough'
+                ? 'bg-purple-100 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <span className="text-lg">🎯</span>
+            <span>Walkthrough</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('progress')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'progress'
+                ? 'bg-purple-100 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <span className="text-lg">📊</span>
+            <span>Progress</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('premium')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'premium'
+                ? 'bg-purple-100 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <span className="text-lg">💎</span>
+            <span>Premium</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'profile'
+                ? 'bg-purple-100 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <span className="text-lg">👤</span>
+            <span>Profile</span>
+          </button>
+        </nav>
+
+        {/* Bottom Actions */}
+        <div className="p-4 border-t border-gray-200 space-y-2">
+          <button
+            onClick={() => signOut({ callbackUrl: '/' })}
+            className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+          >
+            <span className="text-lg">🚪</span>
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Top Header */}
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {activeTab === 'chat' && 'AI Chat'}
+                {activeTab === 'tasks' && 'Your Tasks'}
+                {activeTab === 'calendar' && 'Calendar'}
+                {activeTab === 'walkthrough' && 'Task Walkthrough'}
+                {activeTab === 'progress' && 'Progress'}
+                {activeTab === 'premium' && 'Premium Features'}
+                {activeTab === 'profile' && 'Profile'}
+              </h1>
+              <p className="text-gray-600">
+                {activeTab === 'chat' && 'Chat with your AI assistant'}
+                {activeTab === 'tasks' && 'Manage and track your tasks'}
+                {activeTab === 'calendar' && 'Sync tasks with your calendar'}
+                {activeTab === 'walkthrough' && 'Get guided through task completion'}
+                {activeTab === 'progress' && 'Track your productivity stats'}
+                {activeTab === 'premium' && 'Upgrade your experience'}
+                {activeTab === 'profile' && 'Manage your account settings'}
+              </p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-6">
+                <div className="text-center">
+                  <div className="text-sm text-gray-500">Level</div>
+                  <div className="text-lg font-bold text-purple-600">{userStats.level}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm text-gray-500">XP</div>
+                  <div className="text-lg font-bold text-purple-600">{userStats.xp}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm text-gray-500">Streak</div>
+                  <div className="text-lg font-bold text-purple-600">{userStats.streak}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 p-6 overflow-y-auto">
+
+        {/* Tab Content */}
+        <div className="min-h-[600px]">
+          {activeTab === 'chat' && (
+            <div className="h-[600px]">
+              <AIChat 
+                onTaskCreated={(task) => {
+                  setTasks(prev => [task, ...prev])
+                  setActiveTab('tasks')
+                }}
+                className="h-full"
+              />
+            </div>
+          )}
+
+          {activeTab === 'tasks' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl shadow-sm border p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-900">Your Tasks</h2>
+                  <div className="flex items-center space-x-3">
+                    <div className="text-sm text-gray-500">
+                      {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
+                    </div>
+                    <button
+                      onClick={exportToCalendar}
+                      className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      📅 Export Calendar
+                    </button>
+                  </div>
+                </div>
+                {tasks.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">📝</div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks yet</h3>
+                    <p className="text-gray-600 mb-4">Start a conversation with AI Chat to create your first task!</p>
+                    <button
+                      onClick={() => setActiveTab('chat')}
+                      className="bg-lunchbox-primary text-white px-6 py-2 rounded-lg hover:bg-lunchbox-secondary transition-colors"
+                    >
+                      Go to AI Chat
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {tasks.map((task, index) => {
+                      const isExpanded = expandedTasks.has(task.id)
+                      return (
+                        <div key={index} className="border border-gray-200 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-medium text-gray-900">{task.title}</h3>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              task.category === 'Sweet' ? 'bg-pink-100 text-pink-800' :
+                              task.category === 'Veggies' ? 'bg-green-100 text-green-800' :
+                              task.category === 'Savory' ? 'bg-orange-100 text-orange-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {task.category}
+                            </span>
+                          </div>
+                          
+                          {task.due_date && (
+                            <div className="mb-3">
+                              <span className={`text-xs px-2 py-1 rounded-full ${
+                                new Date(task.due_date) < new Date() ? 'bg-red-100 text-red-800' :
+                                new Date(task.due_date) < new Date(Date.now() + 24 * 60 * 60 * 1000) ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-blue-100 text-blue-800'
+                              }`}>
+                                Due: {new Date(task.due_date).toLocaleDateString()} {new Date(task.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {/* Expandable Steps Section */}
+                          <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
+                            isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+                          }`}>
+                            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                              <h4 className="font-medium text-gray-800 mb-2">📋 Step-by-Step Plan:</h4>
+                              <div className="space-y-2">
+                                {task.completion_steps.map((step, stepIndex) => (
+                                  <div key={stepIndex} className="flex items-start space-x-2">
+                                    <span className="flex-shrink-0 w-6 h-6 bg-lunchbox-primary text-white rounded-full flex items-center justify-center text-xs font-medium">
+                                      {step.step_number}
+                                    </span>
+                                    <div className="flex-1">
+                                      <p className="text-sm text-gray-700" dangerouslySetInnerHTML={{
+                                        __html: step.description.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                      }}></p>
+                                      <span className="text-xs text-gray-500">~{step.estimated_time} min</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm text-gray-500">
+                              {task.completion_steps.length} steps • ~{Math.round(task.completion_steps.reduce((total, step) => total + (step.estimated_time || 0), 0) / 60)}min
+                            </div>
+                            <div className="flex space-x-2">
+                              <button 
+                                onClick={() => startWalkthrough(task)}
+                                className="group bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 transform hover:scale-105 hover:shadow-md"
+                              >
+                                <span className="flex items-center space-x-1">
+                                  <span>Start Walkthrough</span>
+                                  <span className="text-xs">🚀</span>
+                                </span>
+                              </button>
+                              <button 
+                                onClick={() => toggleTaskExpansion(task.id)}
+                                className="group bg-lunchbox-primary hover:bg-lunchbox-secondary text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 transform hover:scale-105 hover:shadow-md"
+                              >
+                                <span className="flex items-center space-x-1">
+                                  <span>{isExpanded ? 'Hide Steps' : 'View Steps'}</span>
+                                  <span className="text-xs">{isExpanded ? '▲' : '▼'}</span>
+                                </span>
+                              </button>
+                              {task.due_date && (
+                                <button 
+                                  onClick={() => addTaskToCalendar(task.id)}
+                                  className="group bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 transform hover:scale-105 hover:shadow-md"
+                                >
+                                  <span className="flex items-center space-x-1">
+                                    <span>Add to Calendar</span>
+                                    <span className="text-xs">📅</span>
+                                  </span>
+                                </button>
+                              )}
+                              <button 
+                                onClick={() => handleDeleteTask(task.id)}
+                                className="group bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 transform hover:scale-105 hover:shadow-md"
+                              >
+                                <span className="flex items-center space-x-1">
+                                  <span>Delete</span>
+                                  <span className="text-xs">🗑️</span>
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'walkthrough' && (
+            <div className="max-w-4xl mx-auto">
+              {activeWalkthrough ? (
+                <div className="bg-white rounded-xl shadow-sm border p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900">{activeWalkthrough.title}</h2>
+                      <p className="text-gray-600">Step {currentStep + 1} of {activeWalkthrough.completion_steps.length}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setActiveWalkthrough(null)
+                        setCurrentStep(0)
+                        setActiveTab('tasks')
+                      }}
+                      className="text-gray-500 hover:text-gray-700 text-sm"
+                    >
+                      ← Back to Tasks
+                    </button>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="mb-6">
+                    <div className="flex justify-between text-sm text-gray-600 mb-2">
+                      <span>Progress</span>
+                      <span>{Math.round(((currentStep + 1) / activeWalkthrough.completion_steps.length) * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-lunchbox-primary h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${((currentStep + 1) / activeWalkthrough.completion_steps.length) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {/* Current Step */}
+                  <div className="mb-6">
+                    <div className="bg-gradient-to-r from-lunchbox-primary to-lunchbox-secondary rounded-lg p-6 text-white">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center font-bold">
+                          {currentStep + 1}
+                        </div>
+                        <h3 className="text-xl font-semibold">
+                          {activeWalkthrough.completion_steps[currentStep]?.description.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}
+                        </h3>
+                      </div>
+                      <div className="flex items-center space-x-2 text-sm opacity-90">
+                        <span>⏱️</span>
+                        <span>~{activeWalkthrough.completion_steps[currentStep]?.estimated_time} minutes</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Focus Tips */}
+                  <div className="mb-6">
+                    <h4 className="font-semibold text-gray-900 mb-3">🎯 Focus Tips</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {getFocusTips(activeWalkthrough.completion_steps[currentStep]?.description || '').map((tip, index) => (
+                        <div key={index} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <p className="text-sm text-blue-800">{tip}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Chrome Extension Recommendation */}
+                  <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-yellow-800 mb-2">🌐 Recommended Chrome Extensions</h4>
+                    <div className="space-y-2 text-sm text-yellow-700">
+                      <p>• <strong>StayFocusd:</strong> Block distracting websites during study time</p>
+                      <p>• <strong>Forest:</strong> Plant virtual trees while staying focused</p>
+                      <p>• <strong>Momentum:</strong> Beautiful new tab page with focus features</p>
+                    </div>
+                  </div>
+
+                  {/* Navigation */}
+                  <div className="flex justify-between">
+                    <button
+                      onClick={prevStep}
+                      disabled={currentStep === 0}
+                      className="px-4 py-2 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 text-white rounded-lg transition-colors"
+                    >
+                      ← Previous
+                    </button>
+                    
+                    <div className="flex space-x-3">
+                      {currentStep === activeWalkthrough.completion_steps.length - 1 ? (
+                        <button
+                          onClick={completeWalkthrough}
+                          disabled={completingTask === activeWalkthrough.id}
+                          className="px-6 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white rounded-lg font-medium transition-colors"
+                        >
+                          {completingTask === activeWalkthrough.id ? 'Completing...' : 'Complete Task 🎉'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={nextStep}
+                          className="px-4 py-2 bg-lunchbox-primary hover:bg-lunchbox-secondary text-white rounded-lg transition-colors"
+                        >
+                          Next →
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4">🎯</div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">No Active Walkthrough</h3>
+                  <p className="text-gray-600 mb-4">Start a walkthrough from your tasks to get guided through each step!</p>
+                  <button
+                    onClick={() => setActiveTab('tasks')}
+                    className="bg-lunchbox-primary text-white px-6 py-2 rounded-lg hover:bg-lunchbox-secondary transition-colors"
+                  >
+                    Go to Tasks
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'progress' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl shadow-sm border p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="text-3xl">📊</div>
+                  <h2 className="text-xl font-semibold text-gray-900">Your Stats</h2>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Level</span>
+                    <span className="font-semibold">{userStats.level}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">XP</span>
+                    <span className="font-semibold">{userStats.xp}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Streak</span>
+                    <span className="font-semibold">{userStats.streak} days</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="text-3xl">🎯</div>
+                  <h2 className="text-xl font-semibold text-gray-900">Achievements</h2>
+                </div>
+                <p className="text-gray-600">Coming soon! Track your achievements and unlock badges.</p>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="text-3xl">📈</div>
+                  <h2 className="text-xl font-semibold text-gray-900">Leaderboard</h2>
+                </div>
+                <p className="text-gray-600">See how you rank among other users!</p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'profile' && (
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-6">Profile Information</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Discord ID</label>
+                    <p className="text-sm text-gray-900">{session?.user?.discordId}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <p className="text-sm text-gray-900">{session?.user?.username}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <p className="text-sm text-gray-900">{session?.user?.email}</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Avatar</label>
+                    {session?.user?.image && (
+                      <img
+                        src={session.user.image}
+                        alt={session.user.name || 'User'}
+                        className="w-16 h-16 rounded-full"
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Discord Notifications</label>
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={toggleDiscordNotifications}
+                        className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                          discordSettings.notifications_enabled
+                            ? 'bg-green-500 hover:bg-green-600 text-white'
+                            : 'bg-gray-300 hover:bg-gray-400 text-gray-700'
+                        }`}
+                      >
+                        {discordSettings.notifications_enabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                      {discordSettings.has_connection && (
+                        <button
+                          onClick={testDiscordNotification}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          Test
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {discordSettings.has_connection 
+                        ? 'Get notified in Discord when tasks are overdue' 
+                        : 'Connect Discord to enable notifications'
+                      }
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'calendar' && (
+            <div className="max-w-6xl mx-auto">
+              <div className="bg-white rounded-xl shadow-sm border p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Calendar Integration</h2>
+                  <button
+                    onClick={exportToCalendar}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    📅 Export All Tasks
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Upcoming Tasks</h3>
+                    <div className="space-y-3">
+                      {tasks.filter(task => task.due_date && new Date(task.due_date) > new Date()).slice(0, 5).map((task, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <h4 className="font-medium text-gray-900">{task.title}</h4>
+                            <p className="text-sm text-gray-500">
+                              {new Date(task.due_date).toLocaleDateString()} at {new Date(task.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => addTaskToCalendar(task.id)}
+                            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors"
+                          >
+                            Add to Calendar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Calendar Features</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
+                        <span className="text-blue-500">📅</span>
+                        <div>
+                          <h4 className="font-medium text-gray-900">iCalendar Export</h4>
+                          <p className="text-sm text-gray-600">Export tasks to Google Calendar, Apple Calendar, or Outlook</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-3 p-3 bg-green-50 rounded-lg">
+                        <span className="text-green-500">⏰</span>
+                        <div>
+                          <h4 className="font-medium text-gray-900">Automatic Reminders</h4>
+                          <p className="text-sm text-gray-600">Tasks include 1-hour reminders before due date</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-3 p-3 bg-purple-50 rounded-lg">
+                        <span className="text-purple-500">📊</span>
+                        <div>
+                          <h4 className="font-medium text-gray-900">Priority & Duration</h4>
+                          <p className="text-sm text-gray-600">Tasks include priority levels and estimated duration</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'premium' && (
+            <div className="max-w-6xl mx-auto">
+              <PremiumFeatures />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { generateAIResponse } from '@/lib/groq';
+import { generateAIResponse } from '../../../../lib/groq';
 
 export async function POST(request) {
   try {
-    const { message, userContext } = await request.json();
+    const { message, conversationHistory, userId, userXp, userLevel, userStreak } = await request.json();
 
     if (!message) {
       return NextResponse.json(
@@ -12,7 +12,14 @@ export async function POST(request) {
       );
     }
 
-    const response = await generateAIResponse(message, userContext);
+    const userContext = {
+      userId,
+      xp: userXp,
+      level: userLevel,
+      streak_count: userStreak
+    };
+
+    const response = await generateAIResponse(message, userContext, conversationHistory);
 
     return NextResponse.json({ response });
 

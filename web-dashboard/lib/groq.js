@@ -6,26 +6,26 @@ const groq = new Groq({
 });
 
 // System prompt for Lunchbox AI
-const SYSTEM_PROMPT = `You are Lunchbox AI, a friendly and encouraging AI assistant designed for teens and young creators. Your personality is:
+const SYSTEM_PROMPT = `You are Lunchbox AI, a helpful assistant that gets things done. Your personality is:
 
-- Warm, supportive, and encouraging
-- Uses food/lunchbox metaphors when appropriate
+- Warm, supportive, and genuinely helpful
+- Focuses on practical solutions and actionable advice
 - Speaks like a helpful friend, not a corporate assistant
-- Keeps responses concise but helpful
-- Uses emojis naturally (🍱, 📚, ✨, etc.)
-- Focuses on productivity, studying, and creative work
-- Can help with task management, study planning, and motivation
+- Keeps responses short and to the point
+- Uses emojis sparingly and naturally
+- Prioritizes task completion and productivity
+- Encourages progress and celebrates achievements
 
-You can help with:
-- Task organization and reminders
-- Study planning and learning paths
-- Creative writing and content generation
-- Motivation and encouragement
-- General productivity advice
+Your main goal is to help users:
+- Break down complex tasks into manageable steps
+- Create realistic schedules and study plans
+- Stay motivated and on track with their goals
+- Organize their work and priorities effectively
+- Overcome procrastination and build good habits
 
-Keep responses helpful and encouraging. Use the lunchbox theme when it fits naturally.`;
+IMPORTANT: Always parse and acknowledge specific details from the user's message (times, dates, locations, etc.). If the user has grammar errors, gently correct them while being helpful. When someone mentions an event or task with a time/date, acknowledge it and ask if they want to create a task for it. Don't automatically create tasks - always ask for confirmation first. Keep responses to 1-2 short sentences maximum. Don't ask multiple questions - focus on one action at a time.`;
 
-export async function generateAIResponse(message, userContext = {}) {
+export async function generateAIResponse(message, userContext = {}, conversationHistory = []) {
   try {
     // Add context based on user info
     let contextPrompt = SYSTEM_PROMPT;
@@ -34,13 +34,27 @@ export async function generateAIResponse(message, userContext = {}) {
       contextPrompt += `\n\nUser info: Level ${userContext.level}, ${userContext.xp} XP, ${userContext.streak_count || 0} day streak.`;
     }
 
+    // Build messages array with conversation history
+    const messages = [
+      { role: "system", content: contextPrompt }
+    ];
+
+    // Add conversation history (limit to last 10 messages to avoid token limits)
+    const recentHistory = conversationHistory.slice(-10);
+    recentHistory.forEach(msg => {
+      messages.push({
+        role: msg.role,
+        content: msg.content
+      });
+    });
+
+    // Add current message
+    messages.push({ role: "user", content: message });
+
     const completion = await groq.chat.completions.create({
-      model: "llama3-8b-8192",
-      messages: [
-        { role: "system", content: contextPrompt },
-        { role: "user", content: message }
-      ],
-      max_tokens: 500,
+      model: "llama-3.3-70b-versatile",
+      messages: messages,
+      max_tokens: 80,
       temperature: 0.7,
     });
 
@@ -51,14 +65,14 @@ export async function generateAIResponse(message, userContext = {}) {
     
     // Fallback responses
     if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
-      return "🍱 Hey there! I'm Lunchbox AI, your friendly productivity buddy! How can I help you pack your day today?";
+      return "Hey there! I'm here to help you get things done. What task or project would you like to work on?";
     }
     
     if (message.toLowerCase().includes('help')) {
-      return "🍱 I can help you with tasks, studying, reminders, and staying motivated! Try asking me to remind you about something or help you study for a test!";
+      return "I can help you break down tasks, create study plans, organize your schedule, and stay motivated. What do you need help with?";
     }
     
-    return "🍱 I'm here to help! I can assist with tasks, studying, and keeping you motivated. What would you like to work on today?";
+    return "I'm here to help you accomplish your goals! What would you like to work on or organize today?";
   }
 }
 
@@ -70,10 +84,10 @@ export async function generateStudyPlan(subject, topic = '') {
 3. Practice activities
 4. Resources and tips
 
-Keep it encouraging and use the lunchbox metaphor when appropriate.`;
+Make it practical and actionable. Focus on helping the student succeed.`;
 
     const completion = await groq.chat.completions.create({
-      model: "llama3-8b-8192",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt }
@@ -86,16 +100,16 @@ Keep it encouraging and use the lunchbox metaphor when appropriate.`;
 
   } catch (error) {
     console.error('Error generating study plan:', error);
-    return "🍱 I'd love to help you create a study plan! Let me try again in a moment.";
+    return "I'd love to help you create a study plan! Let me try again in a moment.";
   }
 }
 
 export async function generateTaskSuggestions(category) {
   try {
-    const prompt = `Suggest 3-5 specific tasks for the "${category}" category in a lunchbox-themed task manager. Make them practical and achievable for teens/young adults.`;
+    const prompt = `Suggest 3-5 specific tasks for the "${category}" category. Make them practical and achievable for teens/young adults.`;
 
     const completion = await groq.chat.completions.create({
-      model: "llama3-8b-8192",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt }
@@ -108,6 +122,6 @@ export async function generateTaskSuggestions(category) {
 
   } catch (error) {
     console.error('Error generating task suggestions:', error);
-    return "🍱 Here are some ideas for your lunchbox! Try adding tasks like 'Complete homework' or 'Review notes'.";
+    return "Here are some ideas! Try adding tasks like 'Complete homework' or 'Review notes'.";
   }
 }

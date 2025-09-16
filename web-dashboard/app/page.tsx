@@ -13,10 +13,10 @@ export default function HomePage() {
               <span className="text-xl font-bold text-gradient group-hover:text-lunchbox-primary transition-colors duration-300">Lunchbox AI</span>
             </div>
             <div className="flex items-center space-x-4">
-              <Link href="/login" className="px-4 py-2 text-gray-600 hover:text-gray-900 font-medium transition-colors duration-200 hover:bg-gray-100 rounded-lg">
+              <Link href="/auth/signin" className="px-4 py-2 text-gray-600 hover:text-gray-900 font-medium transition-colors duration-200 hover:bg-gray-100 rounded-lg">
                 Sign In
               </Link>
-              <Link href="/dashboard" className="px-6 py-2 bg-lunchbox-primary text-white font-medium rounded-lg hover:bg-green-600 transition-all duration-200 hover:shadow-lg hover:shadow-green-500/25 hover:-translate-y-0.5">
+              <Link href="/auth/signin" className="px-6 py-2 bg-lunchbox-primary text-white font-medium rounded-lg hover:bg-green-600 transition-all duration-200 hover:shadow-lg hover:shadow-green-500/25 hover:-translate-y-0.5">
                 Get Started
               </Link>
             </div>
